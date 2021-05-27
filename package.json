@@ -1,0 +1,25 @@
+{
+  "name": "EthanolX",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "ganache": "ganache-cli --deterministic",
+    "compile": "truffle compile --all",
+    "test": "truffle test"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.1.0-rc.0",
+    "@openzeppelin/test-helpers": "^0.5.11",
+    "@truffle/hdwallet-provider": "^1.4.0",
+    "@uniswap/v2-core": "^1.0.1",
+    "@uniswap/v2-periphery": "^1.1.0-beta.0",
+    "truffle": "^5.3.6"
+  },
+  "devDependencies": {
+    "chai": "^4.3.4",
+    "dotenv": "^9.0.2",
+    "ganache-cli": "^6.12.2",
+    "truffle-flattener": "^1.5.0"
+  }
+}
