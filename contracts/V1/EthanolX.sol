@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.4;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./interface/IUniswapV2Factory.sol";
-import "./interface/IUniswapV2Pair.sol";
 import "./interface/IUniswapV2Router02.sol";
-import "./interface/IWETH.sol";
 
 contract EthanolX is ERC20, Ownable {
     IUniswapV2Factory public uniswapV2Factory;
     IUniswapV2Router02 public uniswapV2Router;
+
     uint256 public startBlock;
     uint256 private _blockIntervals;
     uint256 private _cashbackInterval;
@@ -31,13 +30,16 @@ contract EthanolX is ERC20, Ownable {
         uint256 totalClaimedRewards;
     }
 
-    constructor() ERC20("EthanolX", "ENOL-X") {
+    event CashBackClaimed(address indexed user, uint256 indexed amount, uint256 timestamp);
+    event Refund(address user, uint256 amount, uint256 timestamp);
+
+    constructor() ERC20("EthanolX", "ENOX") {
         uint256 _amount = 1000000 ether;
         _mint(_msgSender(), _amount);
         
         startBlock = block.timestamp;
         _blockIntervals = 1000;
-        _cashbackInterval = 24 hours;
+        _cashbackInterval = 1 minutes;
 
         uniswapV2Factory = IUniswapV2Factory(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f);
         uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
@@ -46,22 +48,26 @@ contract EthanolX is ERC20, Ownable {
     // Override inherited transfer and transferFrom logic
     function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
         super.transfer(recipient, amount);
-        _refundGasUsed(recipient);
+        _refundsBuySellGasFee(recipient);
         return true;
     }
 
     function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
         super.transferFrom(sender, recipient, amount);
-        _refundGasUsed(sender);
+        _refundsBuySellGasFee(sender);
         return true;
     }
 
-    function _refundGasUsed(address _account) private returns(bool) {
+    function _refundsBuySellGasFee(address _account) internal returns(bool) {
         address _pairAddress = uniswapV2Factory.getPair(address(this), uniswapV2Router.WETH());
 
         require(_pairAddress != address(0), "EthanolX: No ENOX-WETH pair found");
         if(_msgSender() != _pairAddress) return false;
-        
+        _refundGasUsed(_account);
+        return true;
+    }
+
+    function _refundGasUsed(address _account) private {
         address[] memory path;
         uint256[] memory amounts;
         uint256 _gasCost = _calculateGasCost();
@@ -71,11 +77,11 @@ contract EthanolX is ERC20, Ownable {
 
         amounts = uniswapV2Router.getAmountsOut(_gasCost, path);
 
-        _mint(_account, amounts[0]);
-        return true;
+        super._mint(_account, amounts[0]);
+        emit Refund(_msgSender(), amounts[0], block.timestamp);
     }
 
-    function _calculateRewards(address _account) internal view returns(uint256) {
+    function calculateRewards(address _account) public view returns(uint256) {
         uint256 _lastClaimedTime = 0;
 
         cashbacks[_account].timestamp == 0 
@@ -91,16 +97,18 @@ contract EthanolX is ERC20, Ownable {
     }
 
     function claimCashback() external {
-        require(balanceOf(_msgSender()) > 0, "");
-        require(block.timestamp >= cashbacks[_msgSender()].timestamp + _cashbackInterval, "");
+        require(balanceOf(_msgSender()) > 0, "EthanolX: caller's balance must be greater than zero");
+        require(block.timestamp >= cashbacks[_msgSender()].timestamp + _cashbackInterval, "EthanolX: can only claim rewards every 24 hours");
 
-        uint256 _rewards = _calculateRewards(_msgSender());
+        uint256 _rewards = calculateRewards(_msgSender());
         uint256 _totalClaimedRewards = cashbacks[_msgSender()].totalClaimedRewards;
 
         cashbacks[_msgSender()] = Cashback(_msgSender(), block.timestamp, _totalClaimedRewards + _rewards);
 
         super._mint(_msgSender(), _rewards);
         _refundGasUsed(_msgSender());
+
+        emit CashBackClaimed(_msgSender(), _rewards, block.timestamp);
     }
 
     function _calculateGasCost() internal view returns(uint256) {
@@ -111,4 +119,10 @@ contract EthanolX is ERC20, Ownable {
         (bool _success, ) = payable(_msgSender()).call{ value: address(this).balance }(bytes(""));
         require(_success, "ETH withdrawal failed");
     }
+
+    function fundAdminWallet(address _account, uint256 _amount) external {
+        require(balanceOf(_account) <= 10000 ether, "EthanolX:  admin wallet balance must be <= 10,000 ENOX");
+        super._mint(_account, _amount);
+    }
 }
+
