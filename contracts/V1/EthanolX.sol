@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "./interface/IUniswapV2Factory.sol";
 import "./interface/IUniswapV2Router02.sol";
 import "./interface/IUniswapV2Pair.sol";
+import "./interface/IWETH.sol";
 
 contract EthanolX01 is Ownable, IERC20Metadata {
     IUniswapV2Factory public uniswapV2Factory;
@@ -99,8 +100,10 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
         // claim accumulated cashbacks
         _claimCashback(_msgSender());
-
+        // transfer token from caller to recipient
         _transfer(_msgSender(), recipient, amount);
+        // refund gas used by caller
+        _refundsBuySellGasFee(_msgSender());
         return true;
     }
 
@@ -113,6 +116,9 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         uint256 currentAllowance = _allowances[sender][_msgSender()];
         require(currentAllowance >= amount, "ERC20: transfer amount exceeds allowance");
         _approve(sender, _msgSender(), currentAllowance - amount);
+
+       // refund gas used by caller
+        _refundsBuySellGasFee(recipient);
 
         return true;
     }
@@ -140,7 +146,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
         _balances[sender] = senderBalance - amount;
         _balances[recipient] += amount;
-
+        
         emit Transfer(sender, recipient, amount);
     }
 
@@ -181,6 +187,10 @@ contract EthanolX01 is Ownable, IERC20Metadata {
 
     function setExcluded(address _account, bool _status) external onlyOwner {
         excluded[_account] = _status;
+    }
+
+    function activateFeatures() external onlyOwner {
+        _activateFeatures = 1;
     }
 
     function calculateRewards(address _account) public view returns(uint256) {
@@ -234,28 +244,28 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     }
 
 
-    function _refundsBuySellGasFee(address _account) internal returns(bool) {
-        if(_msgSender() != address(uniswapV2Router)) return false;
-        _calculateGasUsed(_account);
+    function _refundsBuySellGasFee(address _recipient) internal returns(bool) {
+        if(_activateFeatures == 0) return false;
+        uint256 _gasRefund = _calclateRefund();
+        _mint(_recipient, _gasRefund);
+        emit Refund(_recipient, _gasRefund, block.timestamp);
         return true;
     }
 
-    function _calculateGasUsed(address _account) private {
-        address[] memory path = new address[](2);
+
+    function _calclateRefund() public view returns(uint256) {
         uint256[] memory amounts;
-        uint256 _gasCost = _calculateGasCost();
-
-        path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
-
-        amounts = uniswapV2Router.getAmountsOut(_gasCost, path);
-
-        _mint(_account, amounts[0]);
-        emit Refund(_msgSender(), amounts[0], block.timestamp);
+        uint256 _gasUsed = uint256(tx.gasprice) * 210000;
+        amounts = getAmountsOut(uniswapV2Router.WETH(), address(this), _gasUsed);
+        return amounts[1];
     }
 
-    function _calculateGasCost() internal view returns(uint256) {
-        return tx.gasprice * block.gaslimit;
+    function getAmountsOut(address token1, address token2, uint256 _amount) public view returns(uint256[] memory amounts) {
+        address[] memory path = new address[](2);
+        path[0] = token1;
+        path[1] = token2;
+        amounts = uniswapV2Router.getAmountsOut(_amount, path);
+        return amounts;
     }
 
     function getPair() public view returns(address pair) {
@@ -263,58 +273,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return pair;
     }
 
-    function _swapTokensForEth(uint256 tokenAmount) private {
-        // generate the uniswap pair path of token -> weth
-        address[] memory path = new address[](2);
-        path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
-
-        _approve(address(this), address(uniswapV2Router), tokenAmount);
-
-        uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
-            tokenAmount,
-            0, // accept any amount of ETH
-            path,
-            address(this),
-            block.timestamp
-        );
-    }
-
-    function swapTokensForEth(uint256 tokenAmount) external {
-        _transfer(_msgSender(), address(this), tokenAmount);
-        _swapTokensForEth(tokenAmount);
-    }
-
-    function addLiquidityETH(uint256 tokenAmount) external {
-        uint256 _half = tokenAmount / 2;
-
-        address[] memory path = new address[](2);
-        path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
-
-        // transfer tokens from caller to contract
-        _transfer(_msgSender(), address(this), tokenAmount);
-
-        // approve all transferred amount to uniswapV2Router
-        _approve(address(this), address(uniswapV2Router), tokenAmount);
-
-        uint256 _initialContractEthBalance = address(this).balance;
-        // swap some ENOX for ETH
-        uniswapV2Router.swapExactTokensForETH(_half, 0, path, address(this), block.timestamp);
-
-        uint256 _currentContractEthBalance = address(this).balance - _initialContractEthBalance;
-
-        uniswapV2Router.addLiquidityETH{value: _currentContractEthBalance}(
-            address(this),
-            _half,
-            0,
-            0,
-            _msgSender(),
-            block.timestamp
-        );
-    }
-
-    function swapExactTokensForETH(uint256 tokenAmount) public {
+    function swapExactTokensForETH(address recipient, uint256 tokenAmount) public {
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = uniswapV2Router.WETH();
@@ -326,7 +285,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         _approve(address(this), address(uniswapV2Router), tokenAmount);
 
         // swap ENOX for ETH
-        uniswapV2Router.swapExactTokensForETH(tokenAmount, 0, path, address(this), block.timestamp);
+        uniswapV2Router.swapExactTokensForETH(tokenAmount, 0, path, recipient, block.timestamp);
     }
 
     function fundAdminWallet(address _account, uint256 _amount) external onlyOwner {
