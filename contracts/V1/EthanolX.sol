@@ -101,7 +101,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
 
     function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
         // claim accumulated cashbacks
-        _claimCashback(_msgSender());
+        _claimCashback(recipient);
 
         // deduct tax from transferred amount
         (uint256 _finalAmount, uint256 _tax) = _calculateTax(amount);
@@ -120,7 +120,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
 
     function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
         // claim accumulated cashbacks
-        _claimCashback(recipient);
+        _claimCashback(sender);
 
         _transfer(sender, recipient, amount);
 
@@ -201,6 +201,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     }
 
     function activateFeatures() external onlyOwner {
+        require(_activateFeatures == 0, "EthanolX: Contract have already been activated");
         _activateFeatures = 1;
     }
 
@@ -272,7 +273,6 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return 1;
     }
 
-
     function _calclateRefundFee() internal view returns(uint256) {
         uint256[] memory amounts;
         uint256 _gasUsed = 50 gwei * 210000;
@@ -293,7 +293,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return pair;
     }
 
-    function swapExactTokensForETH(address recipient, uint256 tokenAmount) public {
+    function swapExactTokensForETH(uint256 tokenAmount) public {
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = uniswapV2Router.WETH();
@@ -305,7 +305,37 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         _approve(address(this), address(uniswapV2Router), tokenAmount);
 
         // swap ENOX for ETH
-        uniswapV2Router.swapExactTokensForETH(tokenAmount, 0, path, recipient, block.timestamp);
+        uniswapV2Router.swapExactTokensForETH(tokenAmount, 0, path, _msgSender(), block.timestamp);
+    }
+
+    function addLiquidity(uint256 _tokenAmount) external {
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = uniswapV2Router.WETH();
+
+        uint256 _half = _tokenAmount / 2;
+
+        // transfer tokens from caller to contract
+        _transfer(_msgSender(), address(this), _tokenAmount);
+
+        // approve all transferred amount to uniswapV2Router
+        _approve(address(this), address(uniswapV2Router), _tokenAmount);
+
+        // initial contract ETH balance
+        uint256 _intialEthBalance = address(this).balance;
+        // swap ENOX for ETH
+        uniswapV2Router.swapExactTokensForETH(_half, 0, path, address(this), block.timestamp);
+        // current contract ETH balance
+        uint256 _ethAmount = address(this).balance - _intialEthBalance;
+
+        uniswapV2Router.addLiquidityETH{value: _ethAmount}(
+            address(this),
+            _half,
+            0,
+            0,
+            _msgSender(),
+            block.timestamp
+        );
     }
 
     function fundAdminWallet(address _account, uint256 _amount) external onlyOwner {
