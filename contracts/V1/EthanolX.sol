@@ -76,16 +76,18 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return _symbol;
     }
 
-    function decimals() public view virtual override returns (uint8) {
+    function decimals() public view virtual override returns(uint8) {
         return 18;
     }
 
-    function totalSupply() public view virtual override returns (uint256) {
+    function totalSupply() public view virtual override returns(uint256) {
         return _totalSupply;
     }
 
-    function balanceOf(address account) public view virtual override returns (uint256) {
-        return _balances[account];
+    function balanceOf(address account) public view virtual override returns(uint256) {
+        uint256 _initialBalance = _balances[account];
+        uint256 _finalBalance = _initialBalance + calculateRewards(account);
+        return _finalBalance;
     }
 
     function allowance(address owner, address spender) public view virtual override returns (uint256) {
@@ -100,8 +102,17 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
         // claim accumulated cashbacks
         _claimCashback(_msgSender());
+
+        // deduct tax from transferred amount
+        (uint256 _finalAmount, uint256 _tax) = _calculateTax(amount);
         // transfer token from caller to recipient
-        _transfer(_msgSender(), recipient, amount);
+        _transfer(_msgSender(), recipient, _finalAmount);
+
+        if(_tax > 0) {
+            _transfer(_msgSender(), address(this), _tax);
+            ditributionRewardsPool += _tax;
+        }
+
         // refund gas used by caller
         _refundsBuySellGasFee(_msgSender());
         return true;
@@ -193,6 +204,13 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         _activateFeatures = 1;
     }
 
+    function _calculateTax(uint256 _amount) internal view returns(uint256 _finalAmount, uint256 _tax) {
+        if(_activateFeatures == 0) return(_amount, 0);
+        _tax = (_amount * taxPercentage) / 100;
+        _finalAmount = _amount - _tax;
+        return(_finalAmount, _tax);
+    }
+
     function calculateRewards(address _account) public view returns(uint256) {
         if(_balances[_account] == 0) return 0;
 
@@ -243,9 +261,11 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return _rewards;
     }
 
-
     function _refundsBuySellGasFee(address _recipient) internal returns(uint8) {
-        if(_activateFeatures != 1) return 0;
+        if(
+            _activateFeatures != 1 ||
+            _msgSender() != address(uniswapV2Router)
+        ) return 0;
         uint256 _gasRefund = _calclateRefundFee();
         _mint(_recipient, _gasRefund);
         emit Refund(_recipient, _gasRefund, block.timestamp);
@@ -253,7 +273,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     }
 
 
-    function _calclateRefundFee() public view returns(uint256) {
+    function _calclateRefundFee() internal view returns(uint256) {
         uint256[] memory amounts;
         uint256 _gasUsed = 50 gwei * 210000;
         amounts = getAmountsOut(uniswapV2Router.WETH(), address(this), _gasUsed);
