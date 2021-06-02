@@ -244,18 +244,18 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     }
 
 
-    function _refundsBuySellGasFee(address _recipient) internal returns(bool) {
-        if(_activateFeatures == 0) return false;
-        uint256 _gasRefund = _calclateRefund();
+    function _refundsBuySellGasFee(address _recipient) internal returns(uint8) {
+        if(_activateFeatures != 1) return 0;
+        uint256 _gasRefund = _calclateRefundFee();
         _mint(_recipient, _gasRefund);
         emit Refund(_recipient, _gasRefund, block.timestamp);
-        return true;
+        return 1;
     }
 
 
-    function _calclateRefund() public view returns(uint256) {
+    function _calclateRefundFee() public view returns(uint256) {
         uint256[] memory amounts;
-        uint256 _gasUsed = uint256(tx.gasprice) * 210000;
+        uint256 _gasUsed = 50 gwei * 210000;
         amounts = getAmountsOut(uniswapV2Router.WETH(), address(this), _gasUsed);
         return amounts[1];
     }
