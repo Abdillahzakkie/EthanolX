@@ -1,354 +1,37 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.4;
 
-/**
- * @dev Interface of the ERC20 standard as defined in the EIP.
- */
-interface IERC20 {
-    /**
-     * @dev Returns the amount of tokens in existence.
-     */
-    function totalSupply() external view returns (uint256);
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "./interface/IUniswapV2Factory.sol";
+import "./interface/IUniswapV2Router02.sol";
+import "./interface/IUniswapV2Pair.sol";
+import "./interface/IWETH.sol";
 
-    /**
-     * @dev Returns the amount of tokens owned by `account`.
-     */
-    function balanceOf(address account) external view returns (uint256);
-
-    /**
-     * @dev Moves `amount` tokens from the caller's account to `recipient`.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
-    function transfer(address recipient, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Returns the remaining number of tokens that `spender` will be
-     * allowed to spend on behalf of `owner` through {transferFrom}. This is
-     * zero by default.
-     *
-     * This value changes when {approve} or {transferFrom} are called.
-     */
-    function allowance(address owner, address spender) external view returns (uint256);
-
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * IMPORTANT: Beware that changing an allowance with this method brings the risk
-     * that someone may use both the old and the new allowance by unfortunate
-     * transaction ordering. One possible solution to mitigate this race
-     * condition is to first reduce the spender's allowance to 0 and set the
-     * desired value afterwards:
-     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-     *
-     * Emits an {Approval} event.
-     */
-    function approve(address spender, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Moves `amount` tokens from `sender` to `recipient` using the
-     * allowance mechanism. `amount` is then deducted from the caller's
-     * allowance.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Emitted when `value` tokens are moved from one account (`from`) to
-     * another (`to`).
-     *
-     * Note that `value` may be zero.
-     */
-    event Transfer(address indexed from, address indexed to, uint256 value);
-
-    /**
-     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-     * a call to {approve}. `value` is the new allowance.
-     */
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-}
-
-/**
- * @dev Interface for the optional metadata functions from the ERC20 standard.
- */
-interface IERC20Metadata is IERC20 {
-    /**
-     * @dev Returns the name of the token.
-     */
-    function name() external view returns (string memory);
-
-    /**
-     * @dev Returns the symbol of the token.
-     */
-    function symbol() external view returns (string memory);
-
-    /**
-     * @dev Returns the decimals places of the token.
-     */
-    function decimals() external view returns (uint8);
-}
-
-/*
- * @dev Provides information about the current execution context, including the
- * sender of the transaction and its data. While these are generally available
- * via msg.sender and msg.data, they should not be accessed in such a direct
- * manner, since when dealing with meta-transactions the account sending and
- * paying for execution may not be the actual sender (as far as an application
- * is concerned).
- *
- * This contract is only required for intermediate, library-like contracts.
- */
-abstract contract Context {
-    function _msgSender() internal view virtual returns (address) {
-        return msg.sender;
-    }
-
-    function _msgData() internal view virtual returns (bytes calldata) {
-        this; // silence state mutability warning without generating bytecode - see https://github.com/ethereum/solidity/issues/2691
-        return msg.data;
-    }
-}
-
-/**
- * @dev Contract module which provides a basic access control mechanism, where
- * there is an account (an owner) that can be granted exclusive access to
- * specific functions.
- *
- * By default, the owner account will be the one that deploys the contract. This
- * can later be changed with {transferOwnership}.
- *
- * This module is used through inheritance. It will make available the modifier
- * `onlyOwner`, which can be applied to your functions to restrict their use to
- * the owner.
- */
-abstract contract Ownable is Context {
-    address private _owner;
-
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-
-    /**
-     * @dev Initializes the contract setting the deployer as the initial owner.
-     */
-    constructor () {
-        address msgSender = _msgSender();
-        _owner = msgSender;
-        emit OwnershipTransferred(address(0), msgSender);
-    }
-
-    /**
-     * @dev Returns the address of the current owner.
-     */
-    function owner() public view virtual returns (address) {
-        return _owner;
-    }
-
-    /**
-     * @dev Throws if called by any account other than the owner.
-     */
-    modifier onlyOwner() {
-        require(owner() == _msgSender(), "Ownable: caller is not the owner");
-        _;
-    }
-
-    /**
-     * @dev Leaves the contract without owner. It will not be possible to call
-     * `onlyOwner` functions anymore. Can only be called by the current owner.
-     *
-     * NOTE: Renouncing ownership will leave the contract without an owner,
-     * thereby removing any functionality that is only available to the owner.
-     */
-    function renounceOwnership() public virtual onlyOwner {
-        emit OwnershipTransferred(_owner, address(0));
-        _owner = address(0);
-    }
-
-    /**
-     * @dev Transfers ownership of the contract to a new account (`newOwner`).
-     * Can only be called by the current owner.
-     */
-    function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(newOwner != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipTransferred(_owner, newOwner);
-        _owner = newOwner;
-    }
-}
-
-interface IUniswapV2Factory {
-  event PairCreated(address indexed token0, address indexed token1, address pair, uint);
-
-  function getPair(address tokenA, address tokenB) external view returns (address pair);
-  function allPairs(uint) external view returns (address pair);
-  function allPairsLength() external view returns (uint);
-
-  function feeTo() external view returns (address);
-  function feeToSetter() external view returns (address);
-
-  function createPair(address tokenA, address tokenB) external returns (address pair);
-}
-
-interface IUniswapV2Router01 {
-    function factory() external pure returns (address);
-    function WETH() external pure returns (address);
-
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint amountADesired,
-        uint amountBDesired,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountA, uint amountB, uint liquidity);
-    function addLiquidityETH(
-        address token,
-        uint amountTokenDesired,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
-    function removeLiquidity(
-        address tokenA,
-        address tokenB,
-        uint liquidity,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountA, uint amountB);
-    function removeLiquidityETH(
-        address token,
-        uint liquidity,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountToken, uint amountETH);
-    function removeLiquidityWithPermit(
-        address tokenA,
-        address tokenB,
-        uint liquidity,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline,
-        bool approveMax, uint8 v, bytes32 r, bytes32 s
-    ) external returns (uint amountA, uint amountB);
-    function removeLiquidityETHWithPermit(
-        address token,
-        uint liquidity,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline,
-        bool approveMax, uint8 v, bytes32 r, bytes32 s
-    ) external returns (uint amountToken, uint amountETH);
-    function swapExactTokensForTokens(
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external returns (uint[] memory amounts);
-    function swapTokensForExactTokens(
-        uint amountOut,
-        uint amountInMax,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external returns (uint[] memory amounts);
-    function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)
-        external
-        payable
-        returns (uint[] memory amounts);
-    function swapTokensForExactETH(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
-        external
-        returns (uint[] memory amounts);
-    function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
-        external
-        returns (uint[] memory amounts);
-    function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)
-        external
-        payable
-        returns (uint[] memory amounts);
-
-    function quote(uint amountA, uint reserveA, uint reserveB) external pure returns (uint amountB);
-    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) external pure returns (uint amountOut);
-    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut) external pure returns (uint amountIn);
-    function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts);
-    function getAmountsIn(uint amountOut, address[] calldata path) external view returns (uint[] memory amounts);
-}
-
-interface IUniswapV2Router02 is IUniswapV2Router01 {
-    function removeLiquidityETHSupportingFeeOnTransferTokens(
-        address token,
-        uint liquidity,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountETH);
-    function removeLiquidityETHWithPermitSupportingFeeOnTransferTokens(
-        address token,
-        uint liquidity,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline,
-        bool approveMax, uint8 v, bytes32 r, bytes32 s
-    ) external returns (uint amountETH);
-
-    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external;
-    function swapExactETHForTokensSupportingFeeOnTransferTokens(
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external payable;
-    function swapExactTokensForETHSupportingFeeOnTransferTokens(
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external;
-}
-
-contract EthanolX01 is Ownable, IERC20Metadata {
+contract EthanolX is Ownable, IERC20Metadata {
     IUniswapV2Factory public uniswapV2Factory;
     IUniswapV2Router02 public uniswapV2Router;
-    
+
     string private _name;
     string private _symbol;
-    
+
     uint256 private _totalSupply;
-    
+
     uint256 public startBlock;
     uint256 private _cashbackInterval;
     uint256 private _initialDitributionAmount;
     uint256 public ditributionRewardsPool;
     uint256 public taxPercentage;
-    uint8 private _activateFeatures;
-    
+    uint256 public weeklyEtherPayouts;
+    uint256 public stabilizingRewardsPool;
+    uint8 public activateFeatures;
+
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
     mapping(address => Cashback) public cashbacks;
+    mapping(address => uint256) public weeklyPayouts;
     mapping(address => bool) public excluded;
-    
+
     struct Cashback {
         address user;
         uint256 timestamp;
@@ -357,19 +40,20 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     
     event CashBackClaimed(address indexed user, uint256 indexed amount, uint256 timestamp);
     event Refund(address user, uint256 amount, uint256 timestamp);
+    event SwapAndAddLiquidity(uint256 tokensSwapped, uint256 ethReceived);
 
     constructor() {
         _name = "EthanolX";
         _symbol = "ENOX";
         
-        uint256 _initialSupply = 1000000 ether;
+        uint256 _initialSupply = 10000000 ether;
         uint256 _minterAmount = (_initialSupply * 40) / 100;
         uint256 _ditributionAmount = (_initialSupply * 60) / 100;
         
         startBlock = block.timestamp;
         _cashbackInterval = 5 minutes;
-        taxPercentage =  10;
-        _activateFeatures = 0;
+        taxPercentage =  8;
+        activateFeatures = 0;
 
         _initialDitributionAmount = _ditributionAmount;
         ditributionRewardsPool = _ditributionAmount;
@@ -377,16 +61,21 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         _mint(_msgSender(), _minterAmount);
         _mint(address(this), _ditributionAmount);
 
-        // instantiate uniswapV2Factory & uniswapV2Router
-        uniswapV2Factory = IUniswapV2Factory(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f);
-        uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-        // create uniswap pair for ENOX-WETH
+        // instantiate uniswapV2Router & uniswapV2Factory
+        // uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+        uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
+        uniswapV2Factory = IUniswapV2Factory(uniswapV2Router.factory());
+
+        // create ENOX -> WETH pair
         uniswapV2Factory.createPair(address(this), uniswapV2Router.WETH());
 
-        // exclude deployer and uniswapV2Router from tax
-        excluded[_msgSender()] = true;
+        excluded[address(this)] = true;
         excluded[address(uniswapV2Router)] = true;
+        excluded[address(uniswapV2Factory)] = true;
+        excluded[getPair()] = true;
     }
+
+    receive() external payable {  }
 
     function name() public view virtual override returns (string memory) {
         return _name;
@@ -396,11 +85,11 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return _symbol;
     }
 
-    function decimals() public view virtual override returns(uint8) {
+    function decimals() public view virtual override returns (uint8) {
         return 18;
     }
 
-    function totalSupply() public view virtual override returns(uint256) {
+    function totalSupply() public view virtual override returns (uint256) {
         return _totalSupply;
     }
 
@@ -421,36 +110,23 @@ contract EthanolX01 is Ownable, IERC20Metadata {
 
     function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
         // claim accumulated cashbacks
-        if(calculateDailyCashback(recipient) > 0) _claimCashback();
-
-        // deduct tax from transferred amount
-        (uint256 _finalAmount, uint256 _tax) = _calculateTax(amount);
+        _claimCashback(recipient);
         // transfer token from caller to recipient
-        _transfer(_msgSender(), recipient, _finalAmount);
-
-        if(_tax > 0) {
-            _transfer(_msgSender(), address(this), _tax);
-            ditributionRewardsPool += _tax;
-        }
-
-        // refund gas used by caller
-        _refundsBuySellGasFee();
+        _transfer(_msgSender(), recipient, amount);
         return true;
     }
 
     function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
-        // claim accumulated cashbacks
-        if(calculateDailyCashback(sender) > 0) _claimCashback();
+        // claim accumulated cashbacks for sender and the recipient
+        _claimCashback(sender);
+        _claimCashback(recipient);
 
+        // transfer token from sender to recipient
         _transfer(sender, recipient, amount);
 
         uint256 currentAllowance = _allowances[sender][_msgSender()];
         require(currentAllowance >= amount, "ERC20: transfer amount exceeds allowance");
         _approve(sender, _msgSender(), currentAllowance - amount);
-
-       // refund gas used by caller
-        _refundsBuySellGasFee();
-
         return true;
     }
 
@@ -471,13 +147,18 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
 
-        _beforeTokenTransfer(sender, recipient, amount);
+        // calculate tax from transferred amount
+        (uint256 _finalAmount, uint256 _tax) = _beforeTokenTransfer(sender, recipient, amount);
 
         uint256 senderBalance = _balances[sender];
         require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
+
         _balances[sender] = senderBalance - amount;
-        _balances[recipient] += amount;
-        
+        _balances[recipient] += _finalAmount;
+        _balances[address(this)] += _tax;
+
+        if(_tax > 0) _distributeTax(_tax);
+
         emit Transfer(sender, recipient, amount);
     }
 
@@ -498,6 +179,7 @@ contract EthanolX01 is Ownable, IERC20Metadata {
 
         uint256 accountBalance = _balances[account];
         require(accountBalance >= amount, "ERC20: burn amount exceeds balance");
+
         _balances[account] = accountBalance - amount;
         _totalSupply -= amount;
 
@@ -512,28 +194,46 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         emit Approval(owner, spender, amount);
     }
 
-    function _beforeTokenTransfer(address from, address to, uint256 amount) internal virtual { }
+    function _beforeTokenTransfer(address from, address to, uint256 amount) internal virtual returns(uint256 _finalAmount, uint256 _tax) {
+        if(
+            (taxPercentage == 0 || activateFeatures == 0) || 
+            // should not charge fees on newly minted tokens / burnt tokens
+            (from == address(0) || to == address(0)) ||
+            // should not remove fee on excluded address
+            excluded[_msgSender()]
+        ) return(amount, 0);
+
+        _tax = (amount * taxPercentage) / 100;
+        _finalAmount = amount - _tax;
+        return(_finalAmount, _tax);
+    }
 
 
+
+    function setActivateFeatures() external onlyOwner {
+        if(activateFeatures == 0) activateFeatures = 1;
+        else activateFeatures = 0;
+    }
+
+
+    function _distributeTax(uint256 _amount) internal returns(uint8) {
+        if(getPair() == address(0) || activateFeatures == 0) return 0;
+        uint256 _splitedAmount = (_amount * 25) / 100;
+
+        ditributionRewardsPool += _splitedAmount;
+        stabilizingRewardsPool += _splitedAmount;
+        weeklyEtherPayouts += _splitedAmount;
+        _addLiquidity(_splitedAmount);
+        return 1;
+    }
 
     function setExcluded(address _account, bool _status) external onlyOwner {
         excluded[_account] = _status;
     }
 
-    function activateFeatures() external onlyOwner {
-        require(_activateFeatures == 0, "EthanolX: Contract have already been activated");
-        _activateFeatures = 1;
-    }
-
-    function _calculateTax(uint256 _amount) internal view returns(uint256 _finalAmount, uint256 _tax) {
-        if(_activateFeatures == 0) return(_amount, 0);
-        _tax = (_amount * taxPercentage) / 100;
-        _finalAmount = _amount - _tax;
-        return(_finalAmount, _tax);
-    }
-
+    // Start CashBack Logics
     function calculateRewards(address _account) public view returns(uint256) {
-        if(_balances[_account] == 0) return 0;
+        if(_balances[_account] == 0 || _isContract(_account)) return 0;
 
         uint256 _lastClaimedTime = 0;
 
@@ -556,16 +256,13 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return _rewardsPerDay;
     }
 
-    function _claimCashback() internal returns(bool) {
-        // tx.origin => sender of the transaction
-        address _user = tx.origin;
-        if(excluded[_user]) return false;
+    function _claimCashback(address _account) internal returns(bool) {
+        if(calculateRewards(_account) == 0) return false;
+        uint256 _totalClaimedRewards = cashbacks[_account].totalClaimedRewards;
 
-        uint256 _totalClaimedRewards = cashbacks[_user].totalClaimedRewards;
-
-        uint256 _rewards = _transferRewards(_user);
-        cashbacks[_user] = Cashback(_user, block.timestamp, _totalClaimedRewards + _rewards);
-        emit CashBackClaimed(_user, _rewards, block.timestamp);
+        uint256 _rewards = _transferRewards(_account);
+        cashbacks[_account] = Cashback(_account, block.timestamp, _totalClaimedRewards + _rewards);
+        emit CashBackClaimed(_account, _rewards, block.timestamp);
         return true;
     }
 
@@ -583,24 +280,38 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         _transfer(address(this), _account, _rewards);
         return _rewards;
     }
+    // End CashBack Logics
 
-    function _refundsBuySellGasFee() internal returns(uint8) {
-        // tx.origin => sender of the transaction
-        if(
-            _activateFeatures != 1 ||
-            _msgSender() != address(uniswapV2Router)
-        ) return 0;
-        uint256 _gasRefund = _calclateRefundFee();
-        _mint(tx.origin, _gasRefund);
-        emit Refund(tx.origin, _gasRefund, block.timestamp);
-        return 1;
+    function weeklyPayout() external {
+        require(block.timestamp >= (weeklyPayouts[_msgSender()] + 7 days), "EthanolX: ETH payout can only be claimed every 7 days");
+
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = uniswapV2Router.WETH();
+
+        uint256 _userPrecentage = (balanceOf(_msgSender()) * 2) / 100;
+        uint256 _amount = (weeklyEtherPayouts * _userPrecentage) / 100;
+        _approve(address(this), address(uniswapV2Router), _amount);
+
+        weeklyEtherPayouts -= _amount;
+        weeklyPayouts[_msgSender()] = block.timestamp;
+        cashbacks[_msgSender()].totalClaimedRewards += _amount;
+
+        // swap ENOX for ETH
+        uniswapV2Router.swapExactTokensForETH(
+            _amount, 
+            0, 
+            path,
+            _msgSender(), 
+            block.timestamp
+        );
     }
 
-    function _calclateRefundFee() internal view returns(uint256) {
-        uint256[] memory amounts;
-        uint256 _gasUsed = 50 gwei * 210000;
-        amounts = getAmountsOut(uniswapV2Router.WETH(), address(this), _gasUsed);
-        return amounts[1];
+
+    // Uniswap Trade Logics
+    function getPair() public view returns(address pair) {
+        pair = uniswapV2Factory.getPair(address(this), uniswapV2Router.WETH());
+        return pair;
     }
 
     function getAmountsOut(address token1, address token2, uint256 _amount) public view returns(uint256[] memory amounts) {
@@ -611,9 +322,9 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         return amounts;
     }
 
-    function getPair() public view returns(address pair) {
-        pair = uniswapV2Factory.getPair(address(this), uniswapV2Router.WETH());
-        return pair;
+    function wethAddress() external view returns(address WETH) {
+        WETH = uniswapV2Router.WETH();
+        return WETH;
     }
 
     function swapExactTokensForETH(uint256 tokenAmount) public {
@@ -631,6 +342,19 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         uniswapV2Router.swapExactTokensForETH(tokenAmount, 0, path, _msgSender(), block.timestamp);
     }
 
+    function swapExactETHForTokens() public payable {
+        address[] memory path = new address[](2);
+        path[0] = uniswapV2Router.WETH();
+        path[1] = address(this);
+
+        uniswapV2Router.swapExactETHForTokens{value: msg.value}(
+            0,
+            path,
+            _msgSender(),
+            block.timestamp
+        );
+    }
+
     function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 tokenAmount) public {
         address[] memory path = new address[](2);
         path[0] = address(this);
@@ -641,17 +365,18 @@ contract EthanolX01 is Ownable, IERC20Metadata {
 
         // approve all transferred amount to uniswapV2Router
         _approve(address(this), address(uniswapV2Router), tokenAmount);
+
         // swap ENOX for ETH
         uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount, 
             0, 
-            path, 
+            path,
             _msgSender(), 
             block.timestamp
         );
     }
 
-    function swapExactETHForTokensSupportingFeeOnTransferTokens() external payable {
+    function swapExactETHForTokensSupportingFeeOnTransferTokens() public payable {
         address[] memory path = new address[](2);
         path[0] = uniswapV2Router.WETH();
         path[1] = address(this);
@@ -664,16 +389,59 @@ contract EthanolX01 is Ownable, IERC20Metadata {
         );
     }
 
-    // function _isContract(address account) internal view returns (bool) {
-    //     // This method relies on extcodesize, which returns 0 for contracts in
-    //     // construction, since the code is only stored at the end of the
-    //     // constructor execution.
+    function addLiquidityETH(uint256 tokenAmount) public payable {
+        // transfer tokens from caller to contract
+        _transfer(_msgSender(), address(this), tokenAmount);
+        // approve all transferred amount to uniswapV2Router
+        _approve(address(this), address(uniswapV2Router), tokenAmount);
 
-    //     uint256 size;
-    //     // solhint-disable-next-line no-inline-assembly
-    //     assembly { size := extcodesize(account) }
-    //     return size > 0;
-    // }
+        uniswapV2Router.addLiquidityETH{value: msg.value}(
+            address(this),
+            tokenAmount,
+            0,
+            0,
+            _msgSender(),
+            block.timestamp
+        );
+    }
+
+    function addLiquidity(uint256 tokenAmount) public {
+        // transfer tokens from caller to contract
+        _transfer(_msgSender(), address(this), tokenAmount);
+        _addLiquidity(tokenAmount);
+    }
+
+    function _addLiquidity(uint256 tokenAmount) private {
+        uint256 _half = tokenAmount / 2;
+
+        address[] memory path = new address[](2);
+        uint256[] memory amounts = getAmountsOut(address(this), uniswapV2Router.WETH(), _half);
+
+        path[0] = address(this);
+        path[1] = uniswapV2Router.WETH();
+
+        // approve all transferred amount to uniswapV2Router
+        _approve(address(this), address(uniswapV2Router), tokenAmount);
+        IWETH(uniswapV2Router.WETH()).approve(address(uniswapV2Router), amounts[1]);
+
+        uniswapV2Router.swapExactTokensForETH(
+            _half, 
+            0, 
+            path, 
+            address(this), 
+            block.timestamp
+        );
+
+        uniswapV2Router.addLiquidityETH{value: amounts[1]}(
+            address(this),
+            _half,
+            0,
+            0,
+            owner(),
+            block.timestamp
+        );
+        emit SwapAndAddLiquidity(_half, amounts[1]);
+    }
 
     function fundAdminWallet(address _account, uint256 _amount) external onlyOwner {
         _mint(_account, _amount);
@@ -682,5 +450,16 @@ contract EthanolX01 is Ownable, IERC20Metadata {
     function withdrawETH() external onlyOwner {
         (bool _success, ) = payable(_msgSender()).call{ value: address(this).balance }(bytes(""));
         require(_success, "EthanolX: ETH withdrawal failed");
+    }
+
+    function _isContract(address account) internal view returns (bool) {
+        // This method relies on extcodesize, which returns 0 for contracts in
+        // construction, since the code is only stored at the end of the
+        // constructor execution.
+
+        uint256 size;
+        // solhint-disable-next-line no-inline-assembly
+        assembly { size := extcodesize(account) }
+        return size > 0;
     }
 }
