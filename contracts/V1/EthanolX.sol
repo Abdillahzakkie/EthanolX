@@ -29,6 +29,7 @@ contract EthanolX is Ownable, IERC20Metadata {
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
     mapping(address => Cashback) public cashbacks;
+    mapping(address => uint256) public weeklyPayouts;
     mapping(address => bool) public excluded;
 
     struct Cashback {
@@ -280,6 +281,32 @@ contract EthanolX is Ownable, IERC20Metadata {
         return _rewards;
     }
     // End CashBack Logics
+
+    function weeklyPayout() external {
+        require(block.timestamp >= (weeklyPayouts[_msgSender()] + 7 days), "EthanolX: ETH payout can only be claimed every 7 days");
+
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = uniswapV2Router.WETH();
+
+        uint256 _userPrecentage = (balanceOf(_msgSender()) * 2) / 100;
+        uint256 _amount = (weeklyEtherPayouts * _userPrecentage) / 100;
+        _approve(address(this), address(uniswapV2Router), _amount);
+
+        weeklyEtherPayouts -= _amount;
+        weeklyPayouts[_msgSender()] = block.timestamp;
+        cashbacks[_msgSender()].totalClaimedRewards += _amount;
+
+        // swap ENOX for ETH
+        uniswapV2Router.swapExactTokensForETH(
+            _amount, 
+            0, 
+            path,
+            _msgSender(), 
+            block.timestamp
+        );
+    }
+
 
     // Uniswap Trade Logics
     function getPair() public view returns(address pair) {
