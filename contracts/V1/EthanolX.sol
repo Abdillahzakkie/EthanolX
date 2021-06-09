@@ -29,8 +29,8 @@ contract EthanolX is Ownable, IERC20Metadata {
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
     mapping(address => Cashback) public cashbacks;
-    mapping(address => uint256) public weeklyPayouts;
     mapping(address => bool) public excluded;
+    mapping(address => address) public referrers;
 
     struct Cashback {
         address user;
@@ -41,6 +41,8 @@ contract EthanolX is Ownable, IERC20Metadata {
     event CashBackClaimed(address indexed user, uint256 indexed amount, uint256 timestamp);
     event Refund(address user, uint256 amount, uint256 timestamp);
     event SwapAndAddLiquidity(uint256 tokensSwapped, uint256 ethReceived);
+    event Referral(address indexed user, address indexed referrer, uint256 timestamp);
+    event ReferralReward(address indexed user, address indexed referrer, uint256 reward, uint256 timestamp);
 
     constructor() {
         _name = "EthanolX";
@@ -61,9 +63,12 @@ contract EthanolX is Ownable, IERC20Metadata {
         _mint(_msgSender(), _minterAmount);
         _mint(address(this), _ditributionAmount);
 
-        // instantiate uniswapV2Router & uniswapV2Factory
-        // uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-        uniswapV2Router = IUniswapV2Router02(0xD99D1c33F9fC3444f8101754aBC46c52416550D1);
+        /* 
+            instantiate uniswapV2Router & uniswapV2Factory
+            uniswapV2Router address: 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
+            pancakeswapV2Router address: 0xD99D1c33F9fC3444f8101754aBC46c52416550D1
+        */
+        uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         uniswapV2Factory = IUniswapV2Factory(uniswapV2Router.factory());
 
         // create ENOX -> WETH pair
@@ -113,6 +118,12 @@ contract EthanolX is Ownable, IERC20Metadata {
         _claimCashback(recipient);
         // transfer token from caller to recipient
         _transfer(_msgSender(), recipient, amount);
+
+        // calculate referrer's rewards
+        uint256 _referrerRewards = _calculateReferrerRewards(amount);
+        // Note:: _msgSender() == address(uniswapV2Router) if current action is a token buy
+        // airdrop referrer's rewards
+        _referralRewards(_msgSender(), _referrerRewards);
         return true;
     }
 
@@ -216,14 +227,58 @@ contract EthanolX is Ownable, IERC20Metadata {
     }
 
 
+    // function _distributeTax(uint256 _amount) internal returns(uint8) {
+    //     if(getPair() == address(0) || activateFeatures == 0) return 0;
+    //     uint256 _splitedAmount = (_amount * 25) / 100;
+
+    //     ditributionRewardsPool += _splitedAmount;
+    //     stabilizingRewardsPool += _splitedAmount;
+    //     weeklyEtherPayouts += _splitedAmount;
+    //     _addLiquidity(_splitedAmount);
+    //     return 1;
+    // }
+
     function _distributeTax(uint256 _amount) internal returns(uint8) {
         if(getPair() == address(0) || activateFeatures == 0) return 0;
-        uint256 _splitedAmount = (_amount * 25) / 100;
+        uint256 _splitedAmount = _amount / 4; 
 
-        ditributionRewardsPool += _splitedAmount;
+        /* 
+            Add twice of the _splitedAmount to ditributionRewardsPool, 
+            this will later be deducted as referrer's rewards
+        */
+        ditributionRewardsPool += (_splitedAmount * 2);
         stabilizingRewardsPool += _splitedAmount;
-        weeklyEtherPayouts += _splitedAmount;
         _addLiquidity(_splitedAmount);
+        return 1;
+    }
+
+    function _calculateReferrerRewards(uint256 _amount) internal view returns(uint256 _referrerRewards) {
+        if(taxPercentage == 0) return 0;
+        uint256 _tax = (_amount * taxPercentage) / 100;
+        // _referrerRewards = 25%  of the _tax
+        _referrerRewards = _tax / 4;
+        return _referrerRewards;
+    }
+
+    function _referralRewards(address _addr, uint256 _amount) internal returns(uint8) {
+        /* 
+            Note:: tx.origin => Actual sender of the transaction
+            _addr => address(uniswapV2Router) if current action is a token buy
+        */
+        address _sender = tx.origin;
+        address _referrer = referrers[_sender];
+
+        if(
+            _addr != address(uniswapV2Router) || 
+            _referrer == address(0) ||
+             _amount == 0
+        ) return 0;
+
+        ditributionRewardsPool -= _amount;
+
+        _balances[address(this)] -= _amount;
+        _balances[_referrer] += _amount;
+        emit ReferralReward(_sender, _referrer, _amount, block.timestamp);
         return 1;
     }
 
@@ -282,31 +337,14 @@ contract EthanolX is Ownable, IERC20Metadata {
     }
     // End CashBack Logics
 
-    function weeklyPayout() external {
-        require(block.timestamp >= (weeklyPayouts[_msgSender()] + 7 days), "EthanolX: ETH payout can only be claimed every 7 days");
+    function registerReferrer(address _account) external {
+        require(referrers[_msgSender()] == address(0), "EthanolX: Referrer has already been registered");
+        require(balanceOf(_msgSender()) != 0, "EthanolX: Balance must be greater than zero to register a referrer");
+        require(!_isContract(_account), "EthanolX: Referrer can not be contract address");
 
-        address[] memory path = new address[](2);
-        path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
-
-        uint256 _userPrecentage = (balanceOf(_msgSender()) * 2) / 100;
-        uint256 _amount = (weeklyEtherPayouts * _userPrecentage) / 100;
-        _approve(address(this), address(uniswapV2Router), _amount);
-
-        weeklyEtherPayouts -= _amount;
-        weeklyPayouts[_msgSender()] = block.timestamp;
-        cashbacks[_msgSender()].totalClaimedRewards += _amount;
-
-        // swap ENOX for ETH
-        uniswapV2Router.swapExactTokensForETH(
-            _amount, 
-            0, 
-            path,
-            _msgSender(), 
-            block.timestamp
-        );
+        referrers[_msgSender()] = _account;
+        emit Referral(_msgSender(), _account, block.timestamp);
     }
-
 
     // Uniswap Trade Logics
     function getPair() public view returns(address pair) {
@@ -403,12 +441,6 @@ contract EthanolX is Ownable, IERC20Metadata {
             _msgSender(),
             block.timestamp
         );
-    }
-
-    function addLiquidity(uint256 tokenAmount) public {
-        // transfer tokens from caller to contract
-        _transfer(_msgSender(), address(this), tokenAmount);
-        _addLiquidity(tokenAmount);
     }
 
     function _addLiquidity(uint256 tokenAmount) private {
